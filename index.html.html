@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cache Hit/Miss Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ─────────── DESIGN TOKENS ─────────── */
+:root{
+  --bg:#030609;--sf:#070d16;--sf2:#0b1525;--sf3:#0f1d32;
+  --bd:#112240;--bd2:#1a3358;
+  --tx:#8fbcdb;--txb:#c5ddf0;--txd:#2a4060;--txm:#4a6882;
+  --acc:#00b4ff;--acc-d:#004a8a;
+  --grn:#00e676;--grn-d:#003d1a;--grn-g:rgba(0,230,118,.4);
+  --red:#ff4444;--red-d:#3d0c0c;--red-g:rgba(255,68,68,.4);
+  --amb:#ffaa00;--amb-d:#3d2800;--amb-g:rgba(255,170,0,.4);
+  --pur:#c084fc;--pur-d:#2d1a4a;--pur-g:rgba(192,132,252,.4);
+  --hud:'Orbitron',monospace;--mono:'Share Tech Mono',monospace;--ui:'Barlow Condensed',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{background:var(--bg);color:var(--tx);font-family:var(--ui);height:100vh;overflow:hidden;letter-spacing:.02em}
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;gap:14px;padding:9px 20px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0}
+.logo{font-family:var(--hud);font-size:.95rem;font-weight:700;color:var(--acc);letter-spacing:.12em;display:flex;align-items:center;gap:9px}
+.lg{width:24px;height:24px;display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.lg span{border-radius:2px;animation:lf 3s infinite}
+.lg span:nth-child(1){background:var(--acc)}.lg span:nth-child(2){background:var(--acc);animation-delay:.4s}
+.lg span:nth-child(3){background:var(--grn);animation-delay:.8s}.lg span:nth-child(4){background:var(--amb);animation-delay:1.2s}
+@keyframes lf{0%,90%,100%{opacity:1}95%{opacity:.35}}
+.hdr-sub{font-size:.72rem;color:var(--txm);font-weight:300;letter-spacing:.08em;text-transform:uppercase}
+.geo-tag{margin-left:auto;background:var(--sf3);border:1px solid var(--bd2);padding:3px 11px;border-radius:20px;font-family:var(--mono);font-size:.68rem;color:var(--acc);letter-spacing:.06em}
+
+/* BODY SPLIT */
+.body{display:grid;grid-template-columns:268px 1fr;flex:1;min-height:0}
+
+/* ─────────── SIDEBAR ─────────── */
+.sb{background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto}
+.sb-sec{padding:11px 14px;border-bottom:1px solid var(--bd)}
+.sec-ttl{font-family:var(--hud);font-size:.55rem;font-weight:600;color:var(--acc);letter-spacing:.2em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.sec-ttl::after{content:'';flex:1;height:1px;background:var(--bd2)}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.fld{margin-bottom:7px}
+.fl{display:block;font-size:.64rem;font-weight:500;color:var(--txm);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
+select,input[type=number],input[type=range],textarea{
+  width:100%;background:var(--sf3);border:1px solid var(--bd2);color:var(--txb);
+  font-family:var(--mono);font-size:.77rem;padding:5px 8px;border-radius:4px;outline:none;transition:border-color .15s;appearance:none;
+}
+select{cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234a6882'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:24px}
+select:focus,input:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 2px rgba(0,180,255,.15)}
+textarea{resize:vertical;min-height:58px;font-size:.73rem;line-height:1.5}
+.trace-meta{display:flex;justify-content:space-between;margin-top:4px}
+.tc{font-family:var(--mono);font-size:.65rem;color:var(--txm)}
+.te{font-size:.65rem;color:var(--red)}
+
+/* Bit strip */
+.bstrip{display:flex;border:1px solid var(--bd2);border-radius:4px;overflow:hidden;margin-top:9px;font-family:var(--mono);font-size:.62rem}
+.bs{flex:1;padding:4px;text-align:center;border-right:1px solid var(--bd2)}
+.bs:last-child{border-right:none}
+.bs.bt{background:rgba(0,180,255,.07);color:var(--acc)}
+.bs.bi{background:rgba(255,170,0,.07);color:var(--amb)}
+.bs.bo{background:rgba(0,230,118,.07);color:var(--grn)}
+.bs-n{font-size:.52rem;color:var(--txm);text-transform:uppercase;letter-spacing:.07em;margin-bottom:1px}
+
+/* Speed slider */
+.speed-zone{padding:10px 14px 6px}
+.speed-row{display:flex;align-items:center;gap:8px;margin-top:4px}
+input[type=range]{padding:0;background:none;border:none;accent-color:var(--acc);cursor:pointer;height:4px}
+input[type=range]:focus{box-shadow:none}
+.speed-lbl{font-family:var(--mono);font-size:.68rem;color:var(--acc);min-width:40px;text-align:right}
+
+/* Compare toggle */
+.cmp-btn{
+  width:100%;margin-top:6px;
+  background:var(--sf3);border:1px solid var(--bd2);color:var(--txm);
+  font-family:var(--hud);font-size:.58rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  padding:8px 0;border-radius:4px;cursor:pointer;transition:all .2s;
+}
+.cmp-btn:hover{border-color:var(--pur);color:var(--pur)}
+.cmp-btn.active{background:rgba(192,132,252,.1);border-color:var(--pur);color:var(--pur);box-shadow:0 0 10px var(--pur-g)}
+
+/* NEXT button */
+.next-zone{padding:12px 14px 8px}
+.btn-next{
+  width:100%;
+  background:linear-gradient(135deg,rgba(0,180,255,.18),rgba(0,180,255,.08));
+  border:1.5px solid var(--acc);color:var(--acc);
+  font-family:var(--hud);font-size:.8rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  padding:13px 0;border-radius:6px;cursor:pointer;transition:all .18s;
+  position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:10px;
+}
+.btn-next::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,180,255,.25),transparent);opacity:0;transition:opacity .18s}
+.btn-next:not(:disabled):hover{box-shadow:0 0 22px rgba(0,180,255,.45);transform:translateY(-1px)}
+.btn-next:not(:disabled):hover::before{opacity:1}
+.btn-next:disabled{opacity:.3;cursor:not-allowed}
+.btn-next .arrow{font-size:1.1rem;transition:transform .18s}
+.btn-next:not(:disabled):hover .arrow{transform:translateX(4px)}
+
+/* Secondary buttons */
+.ctrl-row{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:0 14px 10px}
+.btn{font-family:var(--hud);font-size:.55rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:8px 4px;border-radius:4px;border:1px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn-sec{background:var(--sf3);border-color:var(--bd2);color:var(--txm)}
+.btn-sec:not(:disabled):hover{border-color:var(--acc);color:var(--acc)}
+.btn-run{background:rgba(0,230,118,.08);border-color:var(--grn);color:var(--grn)}
+.btn-run:not(:disabled):hover{background:rgba(0,230,118,.18);box-shadow:0 0 10px var(--grn-g)}
+.btn-stop{background:rgba(255,68,68,.08);border-color:var(--red);color:var(--red)}
+
+/* Progress */
+.prog-wrap{padding:4px 14px 10px}
+.prog-bg{height:3px;background:var(--sf3);border-radius:2px;overflow:hidden}
+.prog-fill{height:100%;background:var(--acc);width:0;transition:width .3s}
+.prog-lbl{font-family:var(--mono);font-size:.63rem;color:var(--txm);margin-top:3px;display:flex;justify-content:space-between}
+
+/* ─────────── MAIN ─────────── */
+.main{display:flex;flex-direction:column;overflow:hidden}
+.ph{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--sf);border-bottom:1px solid var(--bd);flex-shrink:0}
+.ph-ttl{font-family:var(--hud);font-size:.54rem;font-weight:600;color:var(--txm);letter-spacing:.2em;text-transform:uppercase}
+.badge{font-family:var(--mono);font-size:.59rem;padding:2px 7px;border-radius:10px;border:1px solid}
+.bc{color:var(--acc);border-color:var(--acc-d);background:rgba(0,180,255,.06)}
+.bg{color:var(--grn);border-color:var(--grn-d);background:rgba(0,230,118,.06)}
+.ba{color:var(--amb);border-color:var(--amb-d);background:rgba(255,170,0,.06)}
+.br{color:var(--red);border-color:var(--red-d);background:rgba(255,68,68,.06)}
+.bp{color:var(--pur);border-color:var(--pur-d);background:rgba(192,132,252,.06)}
+
+/* ─────────── CURRENT ACCESS PANEL ─────────── */
+.cap{flex-shrink:0;background:var(--sf);border-bottom:1px solid var(--bd);overflow:hidden}
+.cap-inner{padding:11px 14px;display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;min-height:76px}
+.cap-addr{display:flex;flex-direction:column;gap:3px}
+.cap-step-num{font-family:var(--mono);font-size:.62rem;color:var(--txm);letter-spacing:.08em;text-transform:uppercase}
+.cap-addr-val{font-family:var(--hud);font-size:1.45rem;font-weight:700;color:var(--txb);letter-spacing:.06em;line-height:1}
+.cap-addr-hex{font-family:var(--mono);font-size:.76rem;color:var(--txm);margin-top:2px}
+.cap-bits{display:flex;gap:4px;align-items:center;font-family:var(--mono);font-size:.7rem}
+.cap-bit-lbl{font-size:.54rem;color:var(--txm);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;text-align:center}
+.cap-bit-box{display:flex;flex-direction:column;align-items:center;padding:5px 9px;border-radius:5px;border:1px solid;min-width:50px;transition:all .25s}
+.cap-bit-box .v{font-size:.86rem;font-weight:500;line-height:1}
+.cap-bit-box.tag{background:rgba(0,180,255,.09);border-color:var(--acc-d);color:var(--acc)}
+.cap-bit-box.idx{background:rgba(255,170,0,.09);border-color:var(--amb-d);color:var(--amb)}
+.cap-bit-box.off{background:rgba(0,230,118,.09);border-color:var(--grn-d);color:var(--grn)}
+.cap-bit-box.idx.active{background:rgba(255,170,0,.2);border-color:var(--amb);box-shadow:0 0 10px var(--amb-g)}
+.cap-bit-sep{color:var(--txd);font-size:.8rem;padding-bottom:16px}
+.cap-result{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:86px}
+.cap-result-badge{font-family:var(--hud);font-size:.9rem;font-weight:700;letter-spacing:.12em;padding:7px 14px;border-radius:6px;border:2px solid;transition:all .25s;white-space:nowrap}
+.cap-result-badge.hit {background:rgba(0,230,118,.15);border-color:var(--grn);color:var(--grn);box-shadow:0 0 16px var(--grn-g)}
+.cap-result-badge.miss{background:rgba(255,68,68,.15);border-color:var(--red);color:var(--red);box-shadow:0 0 16px var(--red-g)}
+.cap-result-badge.idle{background:var(--sf3);border-color:var(--bd2);color:var(--txm);box-shadow:none}
+.cap-evicted{font-family:var(--mono);font-size:.62rem;color:var(--amb);text-align:center}
+
+/* Miss type badge — NEW */
+.miss-type-badge{
+  font-family:var(--hud);font-size:.6rem;font-weight:700;letter-spacing:.1em;
+  padding:4px 8px;border-radius:4px;border:1px solid;text-align:center;
+  transition:all .25s;white-space:nowrap;min-width:86px;
+}
+.miss-type-badge.comp{background:rgba(192,132,252,.15);border-color:var(--pur);color:var(--pur)}
+.miss-type-badge.conf{background:rgba(255,170,0,.15);border-color:var(--amb);color:var(--amb)}
+.miss-type-badge.cap {background:rgba(255,68,68,.15);border-color:var(--red);color:var(--red)}
+.miss-type-badge.none{background:var(--sf3);border-color:var(--bd2);color:var(--txm)}
+
+.cap-idle{display:flex;align-items:center;justify-content:center;padding:18px 14px;gap:14px;color:var(--txm);font-size:.78rem}
+.cap-idle.done{color:var(--grn)}
+.cap-queue{padding:5px 14px 9px;display:flex;align-items:center;gap:6px;border-top:1px solid var(--bd);font-family:var(--mono);font-size:.67rem;flex-wrap:nowrap;overflow:hidden}
+.cq-lbl{color:var(--txm);white-space:nowrap;font-size:.6rem;text-transform:uppercase;letter-spacing:.08em}
+.cq-cur{background:rgba(255,170,0,.15);border:1px solid var(--amb);color:var(--amb);padding:2px 7px;border-radius:3px;font-weight:500;white-space:nowrap}
+.cq-nxt{background:var(--sf3);border:1px solid var(--bd);color:var(--txm);padding:2px 6px;border-radius:3px;white-space:nowrap}
+.cq-dot{color:var(--txd)}
+@keyframes capIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.cap-inner.animate{animation:capIn .2s ease-out}
+
+/* ─────────── COMPARISON LAYOUT ─────────── */
+/* Normal mode: single grid */
+.grids-wrap{flex:1;overflow:auto;padding:12px 14px;background:var(--bg)}
+/* Compare mode: side-by-side grids */
+.grids-wrap.cmp-active{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  overflow:auto;
+}
+.cmp-col{display:flex;flex-direction:column;gap:0}
+.cmp-col-hdr{
+  font-family:var(--hud);font-size:.58rem;font-weight:600;letter-spacing:.15em;text-transform:uppercase;
+  padding:5px 8px;border-radius:4px 4px 0 0;text-align:center;border:1px solid;border-bottom:none;
+}
+.cmp-col-hdr.lru-hdr{background:rgba(0,180,255,.1);border-color:var(--acc-d);color:var(--acc)}
+.cmp-col-hdr.fifo-hdr{background:rgba(255,170,0,.1);border-color:var(--amb-d);color:var(--amb)}
+.cmp-grid-wrap{overflow:auto;max-height:180px;border:1px solid var(--bd)}
+
+/* ─────────── CACHE GRID ─────────── */
+.cgrid{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:.75rem}
+.cgrid th{padding:5px 8px;font-family:var(--ui);font-size:.6rem;font-weight:600;color:var(--txm);letter-spacing:.1em;text-transform:uppercase;background:var(--sf);border:1px solid var(--bd);text-align:center;white-space:nowrap}
+.th-set{color:var(--txd);min-width:46px}.th-way{color:var(--acc);min-width:80px}
+.th-mru{color:var(--grn)}.th-lru{color:var(--red)}
+.cgrid td{border:1px solid var(--bd)}
+.set-row.ar td{border-top-color:var(--acc)!important;border-bottom-color:var(--acc)!important}
+.set-row.ar td:first-child{border-left-color:var(--acc)!important}
+.set-row.ar td:last-child{border-right-color:var(--acc)!important}
+@keyframes rp{0%{background:rgba(0,180,255,.07)}60%{background:rgba(0,180,255,.1)}100%{background:transparent}}
+.set-row.ar{animation:rp .55s ease-out}
+.td-s{padding:0;text-align:center;background:var(--sf);min-width:46px}
+.slbl{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 5px}
+.snum{color:var(--txb);font-size:.72rem;font-weight:500}
+.sarr{color:var(--acc);font-size:.56rem;opacity:0;transition:opacity .2s}
+.ar .sarr{opacity:1}
+.td-w{padding:0;min-width:80px;transition:background .2s,box-shadow .2s}
+.ci{padding:5px 9px;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:40px;justify-content:center}
+.ct{font-size:.78rem;font-weight:500;color:var(--txd);transition:color .2s}
+.cbs{display:flex;gap:3px;align-items:center}
+.cb{font-size:.49rem;padding:1px 4px;border-radius:3px;font-family:var(--ui);font-weight:600;letter-spacing:.07em;text-transform:uppercase}
+.td-w.occ{background:var(--sf2)}.td-w.occ .ct{color:var(--acc)}
+.td-w.empty .ct{color:var(--txd);font-size:.7rem}
+.cb-m{background:var(--grn-d);color:var(--grn)}.cb-l{background:var(--red-d);color:var(--red)}
+.cb-n{background:rgba(0,180,255,.1);color:var(--acc)}.cb-o{background:var(--red-d);color:var(--red)}
+.td-w.a-hit  {animation:aHit  .75s ease-out forwards}
+.td-w.a-load {animation:aLoad .75s ease-out forwards}
+@keyframes aHit {0%{background:var(--grn-d);box-shadow:inset 0 0 18px var(--grn-g)}45%{background:rgba(0,230,118,.1)}100%{background:var(--sf2);box-shadow:none}}
+@keyframes aLoad{0%{background:var(--amb-d);box-shadow:inset 0 0 18px var(--amb-g)}45%{background:rgba(255,170,0,.08)}100%{background:var(--sf2);box-shadow:none}}
+
+/* ─────────── CHART ─────────── */
+.chart-panel{flex-shrink:0;display:flex;flex-direction:column;border-bottom:1px solid var(--bd);background:var(--bg)}
+.chart-body{position:relative;height:130px;padding:7px 14px 5px}
+
+/* ─────────── ACCESS LOG ─────────── */
+.log-wrap{overflow:auto;max-height:190px}
+.atbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.71rem}
+.atbl th{position:sticky;top:0;z-index:2;padding:5px 8px;font-family:var(--ui);font-size:.57rem;font-weight:600;color:var(--txm);letter-spacing:.1em;text-transform:uppercase;background:var(--sf);border-bottom:1px solid var(--bd);border-right:1px solid var(--bd);text-align:center;white-space:nowrap}
+.atbl td{padding:4px 8px;border-bottom:1px solid var(--bd);border-right:1px solid var(--bd);text-align:center;color:var(--tx);transition:background .12s}
+.atbl tr:last-child td{border-bottom:none}
+.atbl tr:hover td{background:var(--sf3)}
+.atbl tr.latest td{background:var(--sf2)}
+@keyframes rs{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:translateX(0)}}
+.atbl tr.nr{animation:rs .2s ease-out}
+.rh{color:var(--grn);font-weight:600}.rm{color:var(--red);font-weight:600}
+.rev{color:var(--amb)}.ct2{color:var(--acc)}.ci2{color:var(--amb)}.co2{color:var(--grn)}
+/* Miss type cell colours */
+.mt-comp{color:var(--pur);font-weight:600}.mt-conf{color:var(--amb);font-weight:600}.mt-cap{color:var(--red);font-weight:500}
+
+/* ─────────── STATS ─────────── */
+.stats{background:var(--sf);border-top:1px solid var(--bd);display:flex;align-items:stretch;height:64px;overflow:hidden;flex-shrink:0}
+.sc{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 14px;border-right:1px solid var(--bd);min-width:74px;transition:background .2s}
+.sc:hover{background:var(--sf2)}
+.sc.wide{min-width:100px}.sc.fml{flex:1;align-items:flex-start;padding:0 14px;border-right:none}
+.sv{font-family:var(--hud);font-size:1.2rem;font-weight:600;color:var(--txb);line-height:1;transition:color .3s}
+.sv.g{color:var(--grn)}.sv.r{color:var(--red)}.sv.a{color:var(--amb)}.sv.b{color:var(--acc)}.sv.p{color:var(--pur)}
+.sl{font-size:.54rem;font-weight:500;color:var(--txd);letter-spacing:.12em;text-transform:uppercase;margin-top:4px}
+.fm{font-family:var(--mono);font-size:.67rem;color:var(--txm);line-height:1.8}
+.fm span{color:var(--acc)}
+@keyframes cb2{0%{transform:scale(1.14)}100%{transform:scale(1)}}
+.sv.bmp{animation:cb2 .2s ease-out}
+
+/* Empty state */
+.esl{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;color:var(--txd)}
+.ei{width:44px;height:44px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
+.ei span{background:var(--sf3);border-radius:2px}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--sf)}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--acc-d)}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="logo"><div class="lg"><span></span><span></span><span></span><span></span></div>CACHE SIMULATOR</div>
+  <div class="hdr-sub">Computer Organization &amp; Architecture</div>
+  <div class="geo-tag" id="geoTag">CONFIGURE &amp; RESET →</div>
+</header>
+
+<div class="body">
+
+<!-- SIDEBAR -->
+<aside class="sb">
+  <!-- Config -->
+  <div class="sb-sec">
+    <div class="sec-ttl">Configuration</div>
+    <div class="r2">
+      <div class="fld"><label class="fl">Cache Size</label>
+        <select id="cacheSize">
+          <option value="32">32 B</option><option value="64" selected>64 B</option>
+          <option value="128">128 B</option><option value="256">256 B</option>
+          <option value="512">512 B</option><option value="1024">1 KB</option>
+        </select></div>
+      <div class="fld"><label class="fl">Block Size</label>
+        <select id="blockSize">
+          <option value="4">4 B</option><option value="8" selected>8 B</option>
+          <option value="16">16 B</option><option value="32">32 B</option>
+        </select></div>
+    </div>
+    <div class="r2">
+      <div class="fld"><label class="fl">Associativity</label>
+        <select id="assoc">
+          <option value="1">1 (Direct)</option><option value="2" selected>2-Way</option>
+          <option value="4">4-Way</option><option value="8">8-Way</option>
+          <option value="-1">Full Assoc</option>
+        </select></div>
+      <div class="fld"><label class="fl">Policy</label>
+        <select id="policy"><option value="LRU" selected>LRU</option><option value="FIFO">FIFO</option></select></div>
+    </div>
+    <div class="r2">
+      <div class="fld"><label class="fl">Hit Time</label><input type="number" id="hitTime" value="1" min="1" max="20"></div>
+      <div class="fld"><label class="fl">Miss Penalty</label><input type="number" id="missPenalty" value="10" min="1" max="200"></div>
+    </div>
+    <div class="bstrip">
+      <div class="bs bt"><div class="bs-n">Tag</div><div id="bsTag">—</div></div>
+      <div class="bs bi"><div class="bs-n">Index</div><div id="bsIdx">—</div></div>
+      <div class="bs bo"><div class="bs-n">Offset</div><div id="bsOff">—</div></div>
+    </div>
+  </div>
+
+  <!-- Trace -->
+  <div class="sb-sec">
+    <div class="sec-ttl">Address Trace</div>
+    <div class="fld"><textarea id="traceIn" placeholder="e.g.  0 8 16 0 8 32 0 16"></textarea></div>
+    <div class="trace-meta">
+      <span class="tc" id="traceCount">0 addresses</span>
+      <span class="te" id="traceErr"></span>
+    </div>
+    <div style="margin-top:5px;font-size:.63rem;color:var(--txm);line-height:1.6">Space/comma separated. Decimal or hex (0xFF).</div>
+  </div>
+
+  <!-- ── Speed + Compare ── -->
+  <div class="speed-zone">
+    <div class="sec-ttl" style="margin-bottom:8px">Animation Speed</div>
+    <div class="speed-row">
+      <input type="range" id="speedSlider" min="0" max="3" step="1" value="1" style="flex:1">
+      <span class="speed-lbl" id="speedLbl">1×</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.56rem;color:var(--txm);margin-top:3px;padding:0 1px">
+      <span>Slow</span><span>Normal</span><span>Fast</span><span>Turbo</span>
+    </div>
+    <button class="cmp-btn" id="btnCmp">⇌ COMPARE FIFO vs LRU</button>
+  </div>
+
+  <!-- NEXT button -->
+  <div class="next-zone">
+    <button class="btn-next" id="btnNext" disabled>
+      <span>NEXT ACCESS</span><span class="arrow">→</span>
+    </button>
+  </div>
+
+  <!-- Secondary controls -->
+  <div class="ctrl-row">
+    <button class="btn btn-sec" id="btnReset">↺ RESET</button>
+    <button class="btn btn-run" id="btnRun" disabled>▶ RUN ALL</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="prog-wrap">
+    <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+    <div class="prog-lbl"><span id="progStep">Step 0</span><span id="progTotal">/ 0</span></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- Current Access Panel -->
+  <div class="cap" id="capPanel">
+    <div class="cap-idle" id="capIdle">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Press <strong style="color:var(--acc);font-family:var(--hud);font-size:.78rem;letter-spacing:.1em">NEXT ACCESS</strong> to begin
+    </div>
+    <div id="capActive" style="display:none">
+      <div class="cap-inner" id="capInner">
+        <div class="cap-addr">
+          <div class="cap-step-num" id="capStepNum">Step —</div>
+          <div class="cap-addr-val" id="capAddrVal">—</div>
+          <div class="cap-addr-hex" id="capAddrHex">—</div>
+        </div>
+        <div class="cap-bits">
+          <div><div class="cap-bit-lbl">Tag</div><div class="cap-bit-box tag" id="cbTag"><span class="v" id="cbTagV">—</span></div></div>
+          <span class="cap-bit-sep">|</span>
+          <div><div class="cap-bit-lbl">Set</div><div class="cap-bit-box idx active" id="cbIdx"><span class="v" id="cbIdxV">—</span></div></div>
+          <span class="cap-bit-sep">|</span>
+          <div><div class="cap-bit-lbl">Offset</div><div class="cap-bit-box off" id="cbOff"><span class="v" id="cbOffV">—</span></div></div>
+        </div>
+        <!-- Result + miss type side by side -->
+        <div class="cap-result">
+          <div class="cap-result-badge idle" id="capBadge">READY</div>
+          <div class="cap-evicted" id="capEvicted"></div>
+        </div>
+        <div class="cap-result">
+          <div class="miss-type-badge none" id="missTypeBadge">—</div>
+          <div style="font-family:var(--mono);font-size:.56rem;color:var(--txm);text-align:center;margin-top:3px">Miss Type</div>
+        </div>
+      </div>
+      <div class="cap-queue" id="capQueue"></div>
+    </div>
+    <div class="cap-idle done" id="capDone" style="display:none">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Complete — <strong id="capDoneTotal" style="color:var(--grn)">0</strong> accesses processed
+    </div>
+  </div>
+
+  <!-- Cache grid(s): wraps single or dual layout -->
+  <div style="display:flex;flex-direction:column;border-bottom:1px solid var(--bd);flex-shrink:0">
+    <div class="ph">
+      <div class="ph-ttl">Cache State</div>
+      <span class="badge bc" id="bMap">—</span>
+      <span class="badge bg" id="bPol">—</span>
+      <span id="cmpBadge" style="display:none" class="badge bp">COMPARE MODE</span>
+      <span class="badge ba" id="bSet" style="margin-left:auto">—</span>
+    </div>
+    <!-- grids-wrap toggles class 'cmp-active' for side-by-side -->
+    <div class="grids-wrap" id="gridsWrap" style="max-height:210px">
+      <!-- Normal mode: single grid in gridCont -->
+      <div id="gridCont">
+        <div class="esl">
+          <div class="ei"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div style="font-family:var(--hud);font-size:.62rem;color:var(--txm);letter-spacing:.15em">NO SIMULATION LOADED</div>
+          <div style="font-size:.7rem;text-align:center;line-height:1.6">Configure above and click RESET</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hit ratio chart -->
+  <div class="chart-panel">
+    <div class="ph">
+      <div class="ph-ttl">Cumulative Hit Ratio</div>
+      <span class="badge bc" id="chartStep" style="margin-left:auto">—</span>
+      <span class="badge bg" id="chartHR">—</span>
+    </div>
+    <div class="chart-body"><canvas id="hitChart"></canvas></div>
+  </div>
+
+  <!-- Access log -->
+  <div style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="ph">
+      <div class="ph-ttl">Access Log</div>
+      <span class="badge bg" id="logH" style="margin-left:auto">0 Hits</span>
+      <span class="badge br" id="logM">0 Misses</span>
+    </div>
+    <div class="log-wrap">
+      <table class="atbl">
+        <thead><tr>
+          <th>#</th><th>Addr</th><th>Hex</th>
+          <th title="Tag bits">Tag</th><th title="Set index">Set</th><th title="Offset bits">Off</th>
+          <th>Result</th><th>Miss Type</th><th>Evicted</th>
+        </tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- STATS FOOTER: Accesses | Hits | Misses | Hit% | Miss% | AMAT | Compulsory | Conflict | Capacity | Formula -->
+<footer class="stats">
+  <div class="sc"><div class="sv" id="sT">0</div><div class="sl">Accesses</div></div>
+  <div class="sc"><div class="sv g" id="sH">0</div><div class="sl">Hits</div></div>
+  <div class="sc"><div class="sv r" id="sM">0</div><div class="sl">Misses</div></div>
+  <div class="sc wide"><div class="sv b" id="sHR">—</div><div class="sl">Hit Ratio</div></div>
+  <div class="sc wide"><div class="sv a" id="sAM">—</div><div class="sl">AMAT</div></div>
+  <div class="sc"><div class="sv p" id="sCold">0</div><div class="sl">Cold</div></div>
+  <div class="sc"><div class="sv a" id="sConf">0</div><div class="sl">Conflict</div></div>
+  <div class="sc"><div class="sv r" id="sCap">0</div><div class="sl">Capacity</div></div>
+  <div class="sc fml"><div class="fm" id="fml">AMAT = Hit Time + Miss Rate × Miss Penalty</div></div>
+</footer>
+
+</div><!-- /app -->
+
+<script>
+/* ════════════════════════════════════════════════════════
+   SECTION 1 — HELPERS
+════════════════════════════════════════════════════════ */
+function isPow2(n){ return n>0&&(n&(n-1))===0; }
+function log2i(n){ return Math.log2(n)|0; }
+
+/* ════════════════════════════════════════════════════════
+   SECTION 2 — ADDRESS DECOMPOSER
+════════════════════════════════════════════════════════ */
+class AddressDecomposer{
+  constructor(bs,ns){
+    this.offsetBits=log2i(bs);
+    this.indexBits=ns>1?log2i(ns):0;
+    this.tagBits=32-this.offsetBits-this.indexBits;
+    this.offsetMask=(1<<this.offsetBits)-1;
+    this.indexMask=(1<<this.indexBits)-1;
+  }
+  decompose(a){
+    return {
+      offset: a & this.offsetMask,
+      index:  (a>>this.offsetBits) & this.indexMask,
+      tag:    a>>>(this.offsetBits+this.indexBits)
+    };
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   SECTION 3 — REPLACEMENT POLICIES
+════════════════════════════════════════════════════════ */
+class FIFOPolicy{
+  constructor(){ this.queue=[]; }
+  onAccess(){}
+  onLoad(t){ this.queue.push(t); }
+  evict(){ return this.queue.shift(); }
+  remove(t){ const i=this.queue.indexOf(t); if(i>=0)this.queue.splice(i,1); }
+  displayOrder(){ return [...this.queue].reverse(); }
+}
+
+class _N{ constructor(t){ this.tag=t; this.p=this.n=null; } }
+class LRUPolicy{
+  constructor(){
+    this._m=new Map();
+    this._h=new _N(-1); this._t=new _N(-2);
+    this._h.n=this._t; this._t.p=this._h;
+  }
+  _ul(nd){ nd.p.n=nd.n; nd.n.p=nd.p; nd.p=nd.n=null; }
+  _iAH(nd){ nd.n=this._h.n; nd.p=this._h; this._h.n.p=nd; this._h.n=nd; }
+  _mtf(nd){ this._ul(nd); this._iAH(nd); }
+  onAccess(t){ const nd=this._m.get(t); if(nd)this._mtf(nd); }
+  onLoad(t){ const nd=new _N(t); this._m.set(t,nd); this._iAH(nd); }
+  evict(){
+    const lru=this._t.p;
+    if(lru===this._h) throw new Error('LRU evict on empty');
+    this._ul(lru); this._m.delete(lru.tag); return lru.tag;
+  }
+  remove(t){ const nd=this._m.get(t); if(nd){this._m.delete(t);this._ul(nd);} }
+  lruOrder(){ const r=[]; let c=this._h.n; while(c!==this._t){r.push(c.tag);c=c.n;} return r; }
+  displayOrder(){ return this.lruOrder(); }
+}
+
+/* ════════════════════════════════════════════════════════
+   SECTION 4 — CACHE SET
+════════════════════════════════════════════════════════ */
+class CacheSet{
+  constructor(ways,pol){
+    this.ways=ways;
+    this.blocks=new Set();
+    this.policy=pol==='LRU'?new LRUPolicy():new FIFOPolicy();
+  }
+  lookup(t){
+    if(this.blocks.has(t)){ this.policy.onAccess(t); return true; }
+    return false;
+  }
+  load(t){
+    let ev=null;
+    if(this.blocks.size<this.ways){
+      this.blocks.add(t); this.policy.onLoad(t);
+    } else {
+      ev=this.policy.evict();
+      this.blocks.delete(ev); this.blocks.add(t); this.policy.onLoad(t);
+    }
+    return ev;
+  }
+  getWayContents(){
+    const ord=this.policy.displayOrder();
+    return Array.from({length:this.ways},(_,i)=>i<ord.length?ord[i]:null);
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   SECTION 5 — CACHE SIMULATOR
+════════════════════════════════════════════════════════ */
+class CacheSimulator{
+  constructor({cacheSize,blockSize,assoc,policy,hitTime,missPenalty}){
+    if(!isPow2(cacheSize)) throw new Error('Cache size must be power of 2.');
+    if(!isPow2(blockSize)) throw new Error('Block size must be power of 2.');
+    if(blockSize>cacheSize) throw new Error('Block > cache.');
+    this.hitTime=hitTime; this.missPenalty=missPenalty;
+    this.policy=policy.toUpperCase();
+    this.totalBlocks=cacheSize/blockSize;
+    if(assoc===-1){ this.ways=this.totalBlocks; this.mappingType='Fully Associative'; }
+    else if(assoc===1){ this.ways=1; this.mappingType='Direct Mapped'; }
+    else{
+      if(!isPow2(assoc)||assoc>this.totalBlocks) throw new Error('Invalid associativity.');
+      this.ways=assoc; this.mappingType=`${assoc}-Way Set Associative`;
+    }
+    this.numSets=this.totalBlocks/this.ways;
+    this.decomposer=new AddressDecomposer(blockSize,this.numSets);
+    this.sets=Array.from({length:this.numSets},()=>new CacheSet(this.ways,this.policy));
+    this.hitCount=0; this.missCount=0; this.accessNum=0;
+  }
+  access(addr){
+    const {tag,index,offset}=this.decomposer.decompose(addr);
+    const set=this.sets[index];
+    const hit=set.lookup(tag);
+    let ev=null;
+    if(hit) this.hitCount++;
+    else { this.missCount++; ev=set.load(tag); }
+    this.accessNum++;
+    return {accessNum:this.accessNum,address:addr,hex:'0x'+addr.toString(16).toUpperCase().padStart(2,'0'),tag,index,offset,hit,evicted:ev};
+  }
+  getStats(){
+    const total=this.hitCount+this.missCount; if(!total) return null;
+    const hr=this.hitCount/total, mr=this.missCount/total;
+    return {total,hits:this.hitCount,misses:this.missCount,hitRatio:hr,missRate:mr,amat:this.hitTime+mr*this.missPenalty};
+  }
+  getCacheState(){ return this.sets.map(s=>s.getWayContents()); }
+}
+
+/* ════════════════════════════════════════════════════════
+   SECTION 6 — MISS TYPE DETECTOR (3Cs)
+
+   Classifies every cache miss as one of three types:
+
+   COMPULSORY (Cold):  First-ever access to this tag. No cache
+     size or mapping strategy could prevent it.
+     Detection: tag not in seenTags (globally seen set).
+
+   CONFLICT: The block WAS in a fully-associative cache of the
+     same total capacity, but got evicted from the
+     set-limited real cache due to set thrashing.
+     Detection: real MISS but shadow FA HIT.
+
+   CAPACITY: Even a fully-associative cache of the same total
+     size would have missed — the working set is simply
+     larger than the cache.
+     Detection: real MISS and shadow FA also MISS.
+
+   Shadow FA = LRU fully-associative cache with totalBlocks ways.
+════════════════════════════════════════════════════════ */
+class MissTypeDetector{
+  constructor(totalBlocks){
+    // seenTags: all tags ever loaded — used to detect compulsory misses
+    this.seenTags=new Set();
+    // Shadow fully-associative cache (1 set, all blocks, LRU)
+    this.shadow=new CacheSet(totalBlocks,'LRU');
+    // Running counters
+    this.compulsory=0; this.conflict=0; this.capacity=0;
+  }
+
+  /**
+   * classify(tag, hitInReal)
+   *  — Must be called AFTER sim.access() so hitInReal is known.
+   *  — Always keeps the shadow FA in sync (even on HITs).
+   *  — Returns 'COMPULSORY'|'CONFLICT'|'CAPACITY'|null (null = HIT).
+   */
+  classify(tag, hitInReal){
+    // Update shadow FA regardless of outcome in the real cache
+    const shadowHit=this.shadow.lookup(tag);
+    if(!shadowHit) this.shadow.load(tag);
+
+    if(hitInReal){
+      this.seenTags.add(tag);
+      return null; // HITs have no miss type
+    }
+
+    let type;
+    if(!this.seenTags.has(tag)){
+      // First-ever access to this tag → compulsory (cold miss)
+      type='COMPULSORY'; this.compulsory++;
+    } else if(shadowHit){
+      // Shadow FA had it → the real cache's set-structure caused the eviction
+      type='CONFLICT'; this.conflict++;
+    } else {
+      // Shadow FA also missed → total cache capacity was insufficient
+      type='CAPACITY'; this.capacity++;
+    }
+
+    this.seenTags.add(tag);
+    return type;
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   SECTION 7 — CHART (Chart.js 4)
+════════════════════════════════════════════════════════ */
+let hitChart=null;
+// Normal mode arrays
+let cLabels=[],cVals=[],cPtClrs=[],cPtRad=[];
+// Compare mode arrays
+let cValsLRU=[],cValsFIFO=[],cPtLRU=[],cPtFIFO=[];
+const C_LINE='#00b4ff',C_FILL='rgba(0,180,255,.08)';
+const C_HIT='#00e676',C_MISS='#ff4444';
+const C_LRU='#00b4ff',C_LRU_F='rgba(0,180,255,.06)';
+const C_FIFO='#ffaa00',C_FIFO_F='rgba(255,170,0,.06)';
+const C_GRID='rgba(26,51,88,.8)',C_TICK='#4a6882';
+
+function initChart(compareMode){
+  cLabels=[]; cVals=[]; cPtClrs=[]; cPtRad=[];
+  cValsLRU=[]; cValsFIFO=[]; cPtLRU=[]; cPtFIFO=[];
+
+  if(hitChart){ hitChart.destroy(); hitChart=null; }
+
+  const ctx=$('hitChart').getContext('2d');
+  const yAxis={min:0,max:1,
+    title:{display:true,text:'Hit Ratio',color:C_TICK,font:{family:"'Barlow Condensed'",size:10,weight:'500'}},
+    ticks:{color:C_TICK,font:{family:"'Share Tech Mono'",size:10},stepSize:.25,callback:v=>(v*100).toFixed(0)+'%'},
+    grid:{color:C_GRID,drawBorder:false}
+  };
+  const xAxis={
+    title:{display:true,text:'Access Number',color:C_TICK,font:{family:"'Barlow Condensed'",size:10,weight:'500'},padding:{top:2}},
+    ticks:{color:C_TICK,font:{family:"'Share Tech Mono'",size:10},maxTicksLimit:12,autoSkip:true},
+    grid:{color:C_GRID,drawBorder:false}
+  };
+
+  const ttCbs={
+    title:items=>`Access #${items[0].label}`,
+    label:item=>{
+      if(compareMode){
+        const lbl=item.datasetIndex===0?'LRU':'FIFO';
+        return `${lbl} Hit Ratio: ${(item.raw*100).toFixed(1)}%`;
+      }
+      if(item.datasetIndex!==0) return null;
+      return `Hit Ratio: ${(item.raw*100).toFixed(1)}%`;
+    }
+  };
+
+  let datasets;
+  if(compareMode){
+    // Two lines: LRU (cyan) and FIFO (amber), plus 50% reference
+    datasets=[
+      {label:'LRU',data:cValsLRU,borderColor:C_LRU,borderWidth:2,backgroundColor:C_LRU_F,fill:true,tension:.3,
+       pointBackgroundColor:cPtLRU,pointBorderColor:cPtLRU,pointRadius:cPtFIFO.map(()=>3),pointHoverRadius:6,pointBorderWidth:0,clip:false},
+      {label:'FIFO',data:cValsFIFO,borderColor:C_FIFO,borderWidth:2,backgroundColor:C_FIFO_F,fill:false,tension:.3,
+       pointBackgroundColor:cPtFIFO,pointBorderColor:cPtFIFO,pointRadius:cPtFIFO.map(()=>3),pointHoverRadius:6,pointBorderWidth:0,clip:false},
+      {label:'50%',data:[],borderColor:'rgba(255,170,0,.3)',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,tension:0},
+    ];
+  } else {
+    datasets=[
+      {label:'Hit Ratio',data:cVals,borderColor:C_LINE,borderWidth:2,backgroundColor:C_FILL,fill:true,tension:.35,
+       pointBackgroundColor:cPtClrs,pointBorderColor:cPtClrs,pointRadius:cPtRad,pointHoverRadius:6,pointBorderWidth:0,clip:false},
+      {label:'50%',data:[],borderColor:'rgba(255,170,0,.3)',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,tension:0},
+    ];
+  }
+
+  hitChart=new Chart(ctx,{
+    type:'line',
+    data:{labels:cLabels,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      animation:{duration:220,easing:'easeOutQuart'},
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{
+          display:compareMode,
+          labels:{color:C_TICK,font:{family:"'Share Tech Mono'",size:10},usePointStyle:true,pointStyleWidth:8}
+        },
+        tooltip:{backgroundColor:'#0b1525',borderColor:'#1a3358',borderWidth:1,
+          titleColor:'#8fbcdb',bodyColor:'#c5ddf0',
+          titleFont:{family:"'Share Tech Mono'"},bodyFont:{family:"'Share Tech Mono'",size:11},
+          padding:8,callbacks:ttCbs}
+      },
+      scales:{x:xAxis,y:yAxis}
+    }
+  });
+}
+
+function updateChartNormal(result,stats){
+  if(!hitChart||!stats) return;
+  const n=result.accessNum, hr=stats.hitRatio;
+  cLabels.push(n); cVals.push(hr);
+  cPtClrs.push(result.hit?C_HIT:C_MISS);
+  cPtRad.fill(3); cPtRad.push(5);
+  // Sync per-point radius array length
+  hitChart.data.datasets[0].pointRadius=cPtRad;
+  hitChart.data.datasets[1].data=cLabels.map(()=>.5);
+  hitChart.update();
+  $('chartStep').textContent=`Step ${n}`;
+  $('chartHR').textContent=(hr*100).toFixed(1)+'% HR';
+  $('chartHR').className=hr>=.5?'badge bg':'badge br';
+}
+
+function updateChartCompare(rLRU,stLRU,rFIFO,stFIFO){
+  if(!hitChart||!stLRU||!stFIFO) return;
+  const n=rLRU.accessNum;
+  cLabels.push(n);
+  cValsLRU.push(stLRU.hitRatio);  cPtLRU.push(rLRU.hit?C_HIT:C_MISS);
+  cValsFIFO.push(stFIFO.hitRatio); cPtFIFO.push(rFIFO.hit?C_HIT:C_MISS);
+  hitChart.data.datasets[2].data=cLabels.map(()=>.5);
+  // Update point radii
+  const radsLRU=cLabels.map((_,i)=>i===cLabels.length-1?5:3);
+  hitChart.data.datasets[0].pointRadius=radsLRU;
+  hitChart.data.datasets[1].pointRadius=[...radsLRU];
+  hitChart.update();
+  const hr=stLRU.hitRatio;
+  $('chartStep').textContent=`Step ${n}`;
+  $('chartHR').textContent=`LRU ${(stLRU.hitRatio*100).toFixed(1)}% / FIFO ${(stFIFO.hitRatio*100).toFixed(1)}%`;
+  $('chartHR').className='badge bc';
+}
+
+/* ════════════════════════════════════════════════════════
+   UI CONTROLLER
+════════════════════════════════════════════════════════ */
+let sim=null;          // Primary simulator
+let simFIFO=null;      // Secondary (compare mode)
+let simLRU=null;       // Secondary (compare mode)
+let missDetector=null; // Miss type classifier
+let trace=[], step=0, running=false, runTimer=null;
+let cmpMode=false;     // Comparison mode active flag
+
+const $=id=>document.getElementById(id);
+const mkEl=(tag,cls)=>{ const e=document.createElement(tag); if(cls)e.className=cls; return e; };
+
+/* Speed delays: Slow=1200ms, Normal=380ms, Fast=120ms, Turbo=16ms */
+const SPEEDS=[1200,380,120,16];
+const SPEED_LABELS=['0.25×','1×','4×','Turbo'];
+function getDelay(){ return SPEEDS[+$('speedSlider').value]; }
+
+function readCfg(){
+  return {cacheSize:+$('cacheSize').value,blockSize:+$('blockSize').value,
+          assoc:+$('assoc').value,policy:$('policy').value,
+          hitTime:Math.max(1,+$('hitTime').value||1),
+          missPenalty:Math.max(1,+$('missPenalty').value||10)};
+}
+
+function parseTrace(raw){
+  const toks=raw.trim().split(/[\s,]+/).filter(Boolean), res=[];
+  for(const t of toks){
+    const n=(t.startsWith('0x')||t.startsWith('0X'))?parseInt(t,16):parseInt(t,10);
+    if(isNaN(n)||n<0) return null;
+    res.push(n);
+  }
+  return res;
+}
+
+function updateBitStrip(){
+  try{
+    const c=readCfg(), tb=c.cacheSize/c.blockSize;
+    const ways=c.assoc===-1?tb:c.assoc, ns=tb/ways;
+    const off=log2i(c.blockSize),idx=ns>1?log2i(ns):0,tag=32-off-idx;
+    $('bsTag').textContent=tag+'b'; $('bsIdx').textContent=idx+'b'; $('bsOff').textContent=off+'b';
+    $('geoTag').textContent=`${ns}sets × ${ways}ways | T:${tag} I:${idx} O:${off}`;
+  } catch{}
+}
+
+/* ── RESET ──────────────────────────────────────────────── */
+function reset(){
+  stopRun();
+  $('traceErr').textContent='';
+  const parsed=parseTrace($('traceIn').value);
+  if(!parsed||!parsed.length){
+    $('traceErr').textContent=parsed===null?'⚠ Invalid address':'⚠ Enter addresses';
+    return;
+  }
+  trace=parsed;
+  $('traceCount').textContent=`${trace.length} addr${trace.length!==1?'s':''}`;
+  try{
+    const cfg=readCfg();
+    sim=new CacheSimulator(cfg);
+    if(cmpMode){
+      simLRU =new CacheSimulator({...cfg,policy:'LRU'});
+      simFIFO=new CacheSimulator({...cfg,policy:'FIFO'});
+    }
+    missDetector=new MissTypeDetector(sim.totalBlocks);
+  } catch(e){ $('traceErr').textContent='⚠ '+e.message; return; }
+  step=0;
+  $('bMap').textContent=cmpMode?sim.mappingType:sim.mappingType;
+  $('bPol').textContent=cmpMode?'LRU + FIFO':sim.policy;
+  $('bSet').textContent=`${sim.numSets}×${sim.ways}`;
+  $('cmpBadge').style.display=cmpMode?'inline-flex':'none';
+  $('logBody').innerHTML=''; $('logH').textContent='0 Hits'; $('logM').textContent='0 Misses';
+  initChart(cmpMode);
+  renderGrids(-1,null,null);
+  updateStats(null);
+  updateProgress();
+  $('btnNext').disabled=false; $('btnRun').disabled=false;
+  $('btnRun').textContent='▶ RUN ALL'; $('btnRun').className='btn btn-run';
+  showCapIdle();
+}
+
+function showCapIdle(){
+  $('capIdle').style.display='flex'; $('capActive').style.display='none'; $('capDone').style.display='none';
+}
+function showCapDone(){
+  $('capIdle').style.display='none'; $('capActive').style.display='none';
+  $('capDone').style.display='flex'; $('capDoneTotal').textContent=String(trace.length);
+}
+
+/* ── STEP ────────────────────────────────────────────────── */
+function doStep(){
+  if(!sim||step>=trace.length) return;
+  const addr=trace[step];
+
+  // Core simulation
+  const r=sim.access(addr);
+
+  // Compare mode: also run the alternate-policy sims
+  let rLRU=null, rFIFO=null;
+  if(cmpMode){
+    rLRU =simLRU.access(addr);
+    rFIFO=simFIFO.access(addr);
+  }
+
+  step++;
+
+  // Classify miss type using primary sim's result
+  const missType=missDetector.classify(r.tag, r.hit);
+  r.missType=missType;
+
+  // Update UI
+  updateCAP(r, missType);
+  renderGrids(r.index, r, cmpMode?{rLRU,rFIFO}:null);
+  addLogRow(r, missType);
+  updateStats(sim.getStats(), missDetector);
+  if(cmpMode) updateChartCompare(rLRU,simLRU.getStats(),rFIFO,simFIFO.getStats());
+  else        updateChartNormal(r,sim.getStats());
+  updateProgress();
+
+  if(step>=trace.length){
+    $('btnNext').disabled=true; $('btnRun').disabled=true;
+    showCapDone();
+  }
+}
+
+/* ── CAP (Current Access Panel) ──────────────────────────── */
+function updateCAP(r, missType){
+  $('capIdle').style.display='none'; $('capDone').style.display='none'; $('capActive').style.display='block';
+  const inner=$('capInner'); inner.classList.remove('animate'); void inner.offsetWidth; inner.classList.add('animate');
+
+  $('capStepNum').textContent=`Step ${r.accessNum} of ${trace.length}`;
+  $('capAddrVal').textContent=String(r.address);
+  $('capAddrHex').textContent=r.hex;
+  $('cbTagV').textContent=r.tag; $('cbIdxV').textContent=r.index; $('cbOffV').textContent=r.offset;
+
+  const badge=$('capBadge');
+  badge.className='cap-result-badge '+(r.hit?'hit':'miss');
+  badge.textContent=r.hit?'HIT ✓':'MISS ✗';
+  $('capEvicted').textContent=r.evicted!==null?`Evicted Tag ${r.evicted}`:'';
+
+  // Miss type badge
+  const mtb=$('missTypeBadge');
+  if(!missType){ mtb.className='miss-type-badge none'; mtb.textContent='—'; }
+  else if(missType==='COMPULSORY'){ mtb.className='miss-type-badge comp'; mtb.textContent='COLD'; }
+  else if(missType==='CONFLICT'){   mtb.className='miss-type-badge conf'; mtb.textContent='CONFLICT'; }
+  else{                             mtb.className='miss-type-badge cap';  mtb.textContent='CAPACITY'; }
+
+  // Queue
+  const q=$('capQueue'); q.innerHTML='';
+  const lb=mkEl('span','cq-lbl'); lb.textContent='Queue:'; q.appendChild(lb);
+  const cur=mkEl('span','cq-cur'); cur.textContent=String(r.address)+'  ✓'; q.appendChild(cur);
+  const upcoming=trace.slice(step,step+7);
+  if(!upcoming.length){ const d=mkEl('span','cq-dot'); d.textContent='  — end'; q.appendChild(d); }
+  else{
+    const d=mkEl('span','cq-dot'); d.textContent='→'; q.appendChild(d);
+    upcoming.forEach((a,i)=>{
+      const p=mkEl('span','cq-nxt'); p.textContent=String(a);
+      if(i===0){ p.style.borderColor='var(--acc)'; p.style.color='var(--acc)'; }
+      q.appendChild(p);
+    });
+    if(trace.length-step>7){ const m=mkEl('span','cq-dot'); m.textContent=`+${trace.length-step-7}`; q.appendChild(m); }
+  }
+}
+
+/* ── Run All ────────────────────────────────────────────────── */
+function startRun(){
+  if(running){stopRun();return;}
+  if(!sim||step>=trace.length) return;
+  running=true;
+  $('btnRun').textContent='⏹ STOP'; $('btnRun').className='btn btn-stop';
+  $('btnNext').disabled=true;
+  function tick(){
+    if(!running||step>=trace.length){stopRun();return;}
+    doStep();
+    if(step<trace.length) runTimer=setTimeout(tick,getDelay());
+    else stopRun();
+  }
+  tick();
+}
+function stopRun(){
+  running=false; clearTimeout(runTimer);
+  $('btnRun').textContent='▶ RUN ALL'; $('btnRun').className='btn btn-run';
+  if(sim&&step<trace.length) $('btnNext').disabled=false;
+}
+
+/* ── Render Grid(s) ──────────────────────────────────────────
+   In normal mode:  renders single grid into #gridCont
+   In compare mode: renders two side-by-side grids inside #gridsWrap
+──────────────────────────────────────────────────────────── */
+function buildGrid(simRef,activeSet,result){
+  const isLRU=simRef.policy==='LRU', state=simRef.getCacheState(), ns=simRef.numSets, nw=simRef.ways;
+  const tbl=mkEl('table','cgrid');
+  // Header
+  const thead=mkEl('thead'), hr=mkEl('tr');
+  const th0=mkEl('th','th-set'); th0.textContent='Set'; hr.appendChild(th0);
+  for(let w=0;w<nw;w++){
+    const th=mkEl('th','th-way'); let lbl=`Way ${w}`;
+    if(nw>1){ if(w===0){lbl+=isLRU?' ✦MRU':' ↑New';th.classList.add('th-mru');} if(w===nw-1){lbl+=' ⚑Evict';th.classList.add('th-lru');} }
+    th.textContent=lbl; hr.appendChild(th);
+  }
+  thead.appendChild(hr); tbl.appendChild(thead);
+  // Rows
+  const tbody=mkEl('tbody');
+  for(let s=0;s<ns;s++){
+    const isA=(s===activeSet);
+    const row=mkEl('tr',`set-row${isA?' ar':''}`);
+    const std=mkEl('td','td-s'), sl=mkEl('div','slbl');
+    const sn=mkEl('div','snum'); sn.textContent=String(s); sl.appendChild(sn);
+    const sa=mkEl('div','sarr'); sa.textContent='►'; sl.appendChild(sa);
+    std.appendChild(sl); row.appendChild(std);
+    const ways=state[s];
+    for(let w=0;w<nw;w++){
+      const tag=ways[w], empty=tag===null;
+      let ac=''; if(result&&s===activeSet&&!empty&&tag===result.tag) ac=result.hit?' a-hit':' a-load';
+      const td=mkEl('td',`td-w${empty?' empty':' occ'}${ac}`);
+      const ci=mkEl('div','ci');
+      const ct=mkEl('div','ct'); ct.textContent=empty?'—':`Tag: ${tag}`; ci.appendChild(ct);
+      if(!empty&&nw>1){
+        const cbs=mkEl('div','cbs');
+        const filled=ways.filter(t=>t!==null).length;
+        if(w===0){ const b=mkEl('span',`cb ${isLRU?'cb-m':'cb-n'}`); b.textContent=isLRU?'MRU':'NEW'; cbs.appendChild(b); }
+        if(w===filled-1&&filled===nw){ const b=mkEl('span',`cb ${isLRU?'cb-l':'cb-o'}`); b.textContent=isLRU?'LRU':'OLD'; cbs.appendChild(b); }
+        if(isA&&w===0){ const b=mkEl('span','cb cb-n'); b.textContent='✦'; cbs.appendChild(b); }
+        if(cbs.children.length) ci.appendChild(cbs);
+      }
+      td.appendChild(ci); row.appendChild(td);
+    }
+    tbody.appendChild(row);
+  }
+  tbl.appendChild(tbody); return tbl;
+}
+
+function renderGrids(activeSet, result, cmpData){
+  if(!sim) return;
+  const wrap=$('gridsWrap');
+  if(!cmpData){
+    // Normal single-grid mode
+    wrap.classList.remove('cmp-active');
+    const cont=$('gridCont');
+    cont.style.display='block';
+    cont.innerHTML='';
+    cont.appendChild(buildGrid(sim,activeSet,result));
+  } else {
+    // Comparison mode: two grids side by side
+    wrap.classList.add('cmp-active');
+    const cont=$('gridCont');
+    cont.style.display='none'; // hide single grid
+    // Clear any existing cmp columns from wrap (except gridCont)
+    [...wrap.querySelectorAll('.cmp-col')].forEach(el=>el.remove());
+
+    const {rLRU,rFIFO}=cmpData;
+    [
+      {simR:simLRU,  r:rLRU,  hdrCls:'lru-hdr',  label:'LRU'},
+      {simR:simFIFO, r:rFIFO, hdrCls:'fifo-hdr', label:'FIFO'},
+    ].forEach(({simR,r,hdrCls,label})=>{
+      const col=mkEl('div','cmp-col');
+      const hdr=mkEl('div',`cmp-col-hdr ${hdrCls}`); hdr.textContent=label; col.appendChild(hdr);
+      const gw=mkEl('div','cmp-grid-wrap'); gw.appendChild(buildGrid(simR,activeSet,r)); col.appendChild(gw);
+      wrap.appendChild(col);
+    });
+  }
+}
+
+/* ── Add log row ──────────────────────────────────────────── */
+function addLogRow(r, missType){
+  const tbody=$('logBody');
+  const prev=tbody.querySelector('tr.latest'); if(prev)prev.classList.remove('latest');
+  const row=mkEl('tr','nr latest');
+  const mtTxt=missType?{COMPULSORY:'COLD',CONFLICT:'CONFLICT',CAPACITY:'CAPACITY'}[missType]:'—';
+  const mtCls=missType?{COMPULSORY:'mt-comp',CONFLICT:'mt-conf',CAPACITY:'mt-cap'}[missType]:'';
+  [
+    {t:r.accessNum,c:''},
+    {t:r.address,c:''},
+    {t:r.hex,c:''},
+    {t:r.tag,c:'ct2'},
+    {t:r.index,c:'ci2'},
+    {t:r.offset,c:'co2'},
+    {t:r.hit?'HIT ✓':'MISS ✗',c:r.hit?'rh':'rm'},
+    {t:mtTxt,c:mtCls},
+    {t:r.evicted!==null?`Tag ${r.evicted}`:'—',c:r.evicted!==null?'rev':''},
+  ].forEach(({t,c})=>{ const td=mkEl('td',c); td.textContent=t; row.appendChild(td); });
+  tbody.prepend(row);
+  const st=sim.getStats();
+  if(st){ $('logH').textContent=`${st.hits} Hit${st.hits!==1?'s':''}`; $('logM').textContent=`${st.misses} Miss${st.misses!==1?'es':''}`; }
+  while(tbody.children.length>300) tbody.removeChild(tbody.lastChild);
+}
+
+/* ── Stats bar ──────────────────────────────────────────────── */
+function updateStats(st,md){
+  const bump=id=>{ const e=$(id); if(!e)return; e.classList.remove('bmp'); void e.offsetWidth; e.classList.add('bmp'); };
+  if(!st){
+    ['sT','sH','sM','sHR','sAM','sCold','sConf','sCap'].forEach(id=>$(id).textContent='0');
+    $('sHR').textContent='—'; $('sAM').textContent='—';
+    $('fml').innerHTML='AMAT = Hit Time + Miss Rate × Miss Penalty'; return;
+  }
+  $('sT').textContent=st.total; $('sH').textContent=st.hits; $('sM').textContent=st.misses;
+  $('sHR').textContent=(st.hitRatio*100).toFixed(1)+'%';
+  $('sAM').textContent=st.amat.toFixed(2);
+  if(md){ $('sCold').textContent=md.compulsory; $('sConf').textContent=md.conflict; $('sCap').textContent=md.capacity; }
+  const ht=sim.hitTime,mp=sim.missPenalty;
+  $('fml').innerHTML=`AMAT = <span>${ht}</span> + <span>${(st.missRate*100).toFixed(1)}%</span> × <span>${mp}</span> = <span>${st.amat.toFixed(2)} cyc</span>`;
+  ['sT','sH','sM','sHR','sAM','sCold','sConf','sCap'].forEach(bump);
+}
+
+/* ── Progress ─────────────────────────────────────────────── */
+function updateProgress(){
+  if(!trace.length){ $('progFill').style.width='0%'; $('progStep').textContent='Step 0'; $('progTotal').textContent='/ 0'; return; }
+  $('progFill').style.width=(step/trace.length*100)+'%';
+  $('progStep').textContent=`Step ${step}`;
+  $('progTotal').textContent=`/ ${trace.length}`;
+}
+
+/* ── Live trace validation ────────────────────────────────── */
+function valTrace(){
+  const raw=$('traceIn').value;
+  if(!raw.trim()){ $('traceCount').textContent='0 addresses'; $('traceErr').textContent=''; return; }
+  const p=parseTrace(raw);
+  $('traceErr').textContent=p===null?'⚠ Invalid address found':'';
+  $('traceCount').textContent=p?`${p.length} addr${p.length!==1?'s':''}`:'';
+}
+
+/* ════════════════════════════════════════════════════════
+   BOOT
+════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  $('traceIn').value='0 8 16 0 8 24 16 0 32 8 0 24 8 0 16';
+  valTrace(); updateBitStrip();
+
+  ['cacheSize','blockSize','assoc','policy'].forEach(id=>$(id).addEventListener('change',updateBitStrip));
+  $('traceIn').addEventListener('input',valTrace);
+
+  // Speed slider
+  $('speedSlider').addEventListener('input',()=>{
+    $('speedLbl').textContent=SPEED_LABELS[+$('speedSlider').value];
+  });
+
+  // Compare mode toggle
+  $('btnCmp').addEventListener('click',()=>{
+    cmpMode=!cmpMode;
+    $('btnCmp').classList.toggle('active',cmpMode);
+    $('btnCmp').textContent=cmpMode?'✓ COMPARE MODE ON':'⇌ COMPARE FIFO vs LRU';
+    // Disable policy selector in compare mode (both run simultaneously)
+    $('policy').disabled=cmpMode;
+  });
+
+  $('btnReset').addEventListener('click',reset);
+
+  $('btnNext').addEventListener('click',()=>{ if(!sim)reset(); doStep(); });
+
+  $('btnRun').addEventListener('click',()=>{
+    if(!sim)reset(); if(running)stopRun(); else startRun();
+  });
+
+  // Keyboard: Space/N = step, R = reset, Enter = run/stop, +/- = speed
+  document.addEventListener('keydown',e=>{
+    if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT') return;
+    if((e.key===' '||e.key==='n'||e.key==='N')&&!$('btnNext').disabled){ e.preventDefault(); doStep(); }
+    if(e.key==='r'||e.key==='R') reset();
+    if(e.key==='Enter'&&!$('btnRun').disabled){ running?stopRun():startRun(); }
+    if(e.key==='+'){
+      const s=$('speedSlider'); s.value=Math.min(3,+s.value+1); $('speedLbl').textContent=SPEED_LABELS[+s.value];
+    }
+    if(e.key==='-'){
+      const s=$('speedSlider'); s.value=Math.max(0,+s.value-1); $('speedLbl').textContent=SPEED_LABELS[+s.value];
+    }
+  });
+});
+</script>
+</body>
+</html>
