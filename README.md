@@ -4,7 +4,7 @@ An interactive web-based Cache Memory Simulator
 built for Computer Organization and Architecture (COA).
 
 ## Live Demo
-https://mathaurayush.github.io/cache-simulator/
+https://mathurayush.github.io/cache-simulator/
 
 ## Features
 - Direct, Set-Associative and Fully Associative mapping
